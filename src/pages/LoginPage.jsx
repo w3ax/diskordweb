@@ -15,12 +15,13 @@ import {useState} from "react";
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({email, password}),
-                credentials: 'include',
-            }).then(response=>{
-                const data = response.json()
+            }).then(async (response)=>{
+                const data = await response.json()
                 if(response.ok){
                     setMessage('Login successfully');
-                    navigate('/');
+                    const token = data.authorization
+                    localStorage.setItem('token', token)
+                    setTimeout(() => navigate('/'), 2000);
                 }
                 else {
                     setMessage(`Error: ${data.error}`);
