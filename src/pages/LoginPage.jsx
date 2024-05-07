@@ -9,13 +9,16 @@ import {useState} from "react";
 
         const handleLogin = async (e) => {
             e.preventDefault();
-            fetch('http://46.63.69.24:3000/api/user/login', {
+            const myHeaders = new Headers();
+            myHeaders.append("Content-Type","application/json");
+            const requestOptions = {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({email, password}),
-            }).then(async (response)=>{
+                headers: myHeaders,
+                body: JSON.stringify({email, password})
+            };
+
+            fetch('http://46.63.69.24:3000/api/user/login', requestOptions)
+            .then(async (response)=>{
                 const data = await response.json()
                 if(response.ok){
                     setMessage('Login successfully');
