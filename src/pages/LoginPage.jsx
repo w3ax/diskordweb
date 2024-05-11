@@ -14,7 +14,7 @@ import {useState} from "react";
             const requestOptions = {
                 method: 'POST',
                 headers: myHeaders,
-                body: JSON.stringify({email, password})
+                body: JSON.stringify({email, password}),
             };
 
             fetch('http://46.63.69.24:3000/api/user/login', requestOptions)

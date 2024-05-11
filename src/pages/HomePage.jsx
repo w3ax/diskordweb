@@ -3,7 +3,9 @@ import {useNavigate} from "react-router-dom";
 
 export default function HomePage()
 {
-    async function uploadFile(file){
+    const navigate = useNavigate();
+
+    async function handleFileUpload(file){
         const chunkSize = 20 * 1024 * 1024;
         const fileSize = file.size;
         const fileName = file.name;
@@ -13,122 +15,35 @@ export default function HomePage()
             const start = i * chunkSize;
             const end = Math.min(start + chunkSize, fileSize);
             const chunk = file.slice(start, end);
-            let formData = new FormData();
+            const formData = new FormData()
             formData.append('file', chunk, fileName +'-chunk-' + i);
-
-            const requestOptions = {
-                method: 'POST',
-                body: formData,
-            };
-            try {
-                const response = await fetch('http://46.63.69.24:3000/api/hashes/file', requestOptions);
-                const data = await response.json();
-                if (response.ok) {
-                    const chunkObj={
-                        size:chunk.size,
-                        index:i,
-                        hash:data.hash,
-                        formData:formData
-                    }
-                    chunks.push(chunkObj);
-                    console.log(data);
-                }
-                else{
-                    console.log('error', data.error)
-                }
-            }
-            catch (error) {
-                console.error('Error:', error);
-            }
+            const hash = await getHashFromChunk(formData)
+                .catch(error => console.error('chunkHash: ', error));
+            chunks.push({
+                size:chunk.size,
+                index:i,
+                hash:hash,
+                formData:formData
+            });
         }
+
         const hashes=[];
-        chunks.forEach(chunk => {hashes.push(chunk.hash)});
-        let fileHash="";
-        let requestOptions = {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({hashes}),
-        };
-        try {
-            const response = await fetch('http://46.63.69.24:3000/api/hashes/hashes', requestOptions);
-            const data = await response.json();
-            if (response.ok) {
-                fileHash = data.hash;
-            }
-            else{
-                console.log('error', data.error)
-            }
-        }
-        catch (error) {
-            console.error('Error:', error);
-        }
-        const myHeaders = new Headers();
-        myHeaders.append('Content-Type', 'application/json');
-        myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
-        requestOptions = {
-            method: 'POST',
-            headers: myHeaders,
-            body: JSON.stringify({
-                name:file.name,
-                size:file.size,
-                hash:fileHash,
-                isPublic:false,
-                numChunks:numChunks,
-                chunkSize:chunkSize
-            }),
-        };
-        console.log(hashes)
-        console.log(fileHash)
+        chunks.forEach(chunk => hashes.push(chunk.hash));
 
-        let fileID = null;
-        console.log(requestOptions);
-        try {
-            const response = await fetch('http://46.63.69.24:3000/api/user/file/upload', requestOptions);
-            const data = await response.json();
-            if (response.ok) {
-                fileID = data.fileID;
-            }
-            else{
-                console.log('error', data.error)
-            }
-        }
-        catch (error) {
-            console.error('Error:', error);
-        }
+        const fileHash = await getHashFromHashes(hashes)
+            .catch(error => console.error('fileHash: ', error));
+
+        const fileId = await getFileId(file.name, file.size, fileHash, false, numChunks, chunkSize)
+            .catch(error => console.error('fileId: ', error));
+
         for (const chunk of chunks) {
             {
-                const myHeaders = new Headers();
-                myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
-                let formData = chunk.formData;
-                formData.append('fileID', fileID);
-                formData.append('hash', chunk.hash);
-                formData.append('size', chunk.size);
-                formData.append('index', chunk.index);
-
-                const requestOptions_ = {
-                    method: 'POST',
-                    headers: myHeaders,
-                    body: formData,
-                };
-
-                try {
-                    const response = await fetch('http://46.63.69.24:3000/api/user/file/chunk/upload', requestOptions_);
-                    const data = await response.json()
-                    if (response.ok) {
-                        console.log('ok')
-                    }
-                    else{
-                        console.log('error', data.error)
-                    }
-                }
-                catch (error) {
-                    console.error('Error:', error);
-                }
+                await uploadChunk(fileId, chunk)
+                    .catch(error => console.error('chunk: ', error));
             }
         }
     }
 
-    const navigate = useNavigate();
     useEffect(() => {
         const myHeaders = new Headers();
         myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
@@ -144,7 +59,6 @@ export default function HomePage()
                     navigate('/login')
                 }
             })
-            .then((result) => console.log(result))
             .catch((error) => console.error(error));
     }, []);
 
@@ -155,7 +69,7 @@ export default function HomePage()
         const file = event.target.files[0];
         setSelectedFile(file);
         setIsLoading(true)
-        await uploadFile(file);
+        await handleFileUpload(file);
         setIsLoading(false)
     };
 
@@ -180,4 +94,81 @@ export default function HomePage()
             </form>
         </div>
     </>;
+}
+
+
+async function getHashFromChunk(formData) {
+    const myHeaders = new Headers();
+    myHeaders.append("Content-Type", "multipart/form-data");
+    const requestOptions = {
+        method: 'POST',
+        body: formData,
+    };
+    const response = await fetch('http://46.63.69.24:3000/api/hash/file', requestOptions);
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error)
+    }
+    return data.hash;
+}
+
+async function getHashFromHashes(hashes) {
+    const myHeaders = new Headers();
+    myHeaders.append("Content-Type", "application/json");
+    const requestOptions = {
+        method: 'POST',
+        headers: myHeaders,
+        body: JSON.stringify({hashes}),
+    };
+    const response = await fetch('http://46.63.69.24:3000/api/hash/[]string', requestOptions)
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error);
+    }
+    return data.hash;
+}
+
+async function getFileId(fileName, fileSize, fileHash, isPublic, numChunks, chunkSize) {
+    const myHeaders = new Headers();
+    myHeaders.append('Content-Type', 'application/json');
+    myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+    const requestOptions = {
+        method: 'POST',
+        headers: myHeaders,
+        body: JSON.stringify({
+            name:fileName,
+            size:fileSize,
+            hash:fileHash,
+            isPublic:isPublic,
+            numChunks:numChunks,
+            chunkSize:chunkSize
+        }),
+    };
+    const response = await fetch('http://46.63.69.24:3000/api/file/upload', requestOptions);
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error);
+    }
+    return data.fileId;
+}
+
+async function uploadChunk(fileId, chunk) {
+    const myHeaders = new Headers();
+    myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+    const formData = chunk.formData;
+    formData.append('hash', chunk.hash);
+    formData.append('size', chunk.size);
+    formData.append('index', chunk.index);
+
+    const requestOptions = {
+        method: 'POST',
+        headers: myHeaders,
+        body: formData,
+    };
+    const url = `http://46.63.69.24:3000/api/file/${fileId}/chunk/upload`;
+    const response = await fetch(url, requestOptions);
+    if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error);
+    }
 }
