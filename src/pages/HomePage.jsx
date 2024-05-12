@@ -1,5 +1,7 @@
 import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faDownload } from '@fortawesome/free-solid-svg-icons';
 
 export default function HomePage()
 {
@@ -9,6 +11,7 @@ export default function HomePage()
     const [selectedFiles, setSelectedFiles] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredFiles, setFilteredFiles] = useState(fileList);
+    const [uploadedFiles, setUploadedFiles] = useState([]);
 
     async function uploadFile(file){
         const chunkSize = 20 * 1024 * 1024;
@@ -86,24 +89,30 @@ export default function HomePage()
             .catch((error) => console.error(error));
     }, []);
 
-    const toggleFileSelection = (fileName) => {
-        if (selectedFiles.includes(fileName)) {
-            setSelectedFiles(selectedFiles.filter(file => file !== fileName));
-        } else {
-            setSelectedFiles([...selectedFiles, fileName]);
-        }
-    };
-
     useEffect(() => {
         fetchFiles();
+        handleSearch({ target: { value: '' } });
     }, []);
 
 
     async function fetchFiles() {
         try {
-            const response = await fetch('http://46.63.69.24:3000/api/files');
-            const files = await response.json();
-            setFileList(files);
+            const myHeaders = new Headers();
+            myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+            const requestOptions = {
+                method: 'GET',
+                headers: myHeaders,
+                };
+            const response = await fetch('http://46.63.69.24:3000/api/user/files', requestOptions);
+            const data = await response.json();
+            const files = data.files;
+            const filesNames = await Promise.all(files.map(async (file) => {
+                const responseInfo = await fetch(`http://46.63.69.24:3000/api/user/getfileinfo/${file.id}`, requestOptions);
+                const fileInfoData = await responseInfo.json();
+                const fileName = fileInfoData.name;
+                return {...file, name: fileName};
+            }));
+            setFileList(filesNames);
         } catch (error) {
             console.error('Error:', error);
         }
@@ -116,15 +125,9 @@ export default function HomePage()
         setIsLoading(true)
         await uploadFile(file);
         setIsLoading(false)
+        setUploadedFiles([...uploadedFiles, file]);
     };
-    const filesList = [
-        { name: "ттттт" },
-        { name: "аааа" },
-        { name: "рарара" },
-        { name: "11111" },
-        { name: "чччччч2" }
-    ];
-
+    const filesList = [];
 
     const handleSearch = (event) => {
         const searchTerm = event.target.value;
@@ -132,7 +135,6 @@ export default function HomePage()
         const filtered = filesList.filter(file => file.name.toLowerCase().includes(searchTerm.toLowerCase()));
         setFilteredFiles(filtered);
     };
-
 
     return <>
         <div className={'flex-column d-flex justify-content-center align-items-center'}
@@ -161,16 +163,6 @@ export default function HomePage()
                         {isLoading ? 'Uploading' : 'Upload'}
                         <input type="file" style={{display: 'none'}} onChange={handleFileSelect} disabled={isLoading}/>
                     </label>
-                    <input className={'btn btn-primary d-block p-0 mx-5'} type={'submit'}
-                           value={'Download'}
-                           style={{
-                               height: '4.8%',
-                               width: '30%',
-                               fontSize: '1.6rem',
-                               cursor: 'pointer',
-                               lineHeight: '4.8vh',
-                           }}>
-                    </input>
                 </div>
                 <div className="file-list-container mx-auto" style={{
                     background: '#C0C0C0',
@@ -189,7 +181,7 @@ export default function HomePage()
                             borderRadius: '5px 5px 0 0',
                             textAlign: 'center',
                             fontWeight: 'bold',
-                            background: '#f0f0f0', // Додали фон для тексту "Storage"
+                            background: '#f0f0f0',
                         }}>Storage
                         </li>
                         <li>
@@ -197,7 +189,7 @@ export default function HomePage()
                                 type="text"
                                 placeholder="Search..."
                                 value={searchTerm}
-                                onChange={handleSearch}
+                                onChange={(event) => handleSearch(event)}
                                 style={{
                                     margin: '1% 2% 1% 2.5%',
                                     padding: '6px',
@@ -211,13 +203,19 @@ export default function HomePage()
                         {filteredFiles.map((file, index) => (
                             <li key={index} style={{
                                 marginBottom: '4px',
+                                marginLeft: '20px',
+                                marginRight: '20px',
                                 padding: '5px',
                                 borderRadius: '3px',
                                 textAlign: 'center',
-                                background: selectedFiles.includes(file.name) ? '#cceeff' : 'none', // Змінюємо фон для виділених файлів
+                                background: selectedFiles.includes(file.name) ? '#cceeff' : 'none',
                                 cursor: 'pointer',
-                            }} onClick={() => toggleFileSelection(file.name)}>
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                            }}>
                                 <strong>{file.name}</strong>
+                                <FontAwesomeIcon icon={faDownload} style={{marginLeft:'auto'}} onClick={() => downloadFile(file.name)} />
                             </li>
                         ))}
                     </ul>
