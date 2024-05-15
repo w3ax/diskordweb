@@ -1,14 +1,14 @@
 import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faDownload } from '@fortawesome/free-solid-svg-icons';
+import { faDownload, faRefresh, faSpinner, faWindowClose } from '@fortawesome/free-solid-svg-icons';
+import mime from 'mime';
 
 export default function HomePage()
 {
-    const [selectedFile, setSelectedFile] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
     const [fileList, setFileList] = useState([]);
-    const [selectedFiles, setSelectedFiles] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredFiles, setFilteredFiles] = useState(fileList);
     const [uploadedFiles, setUploadedFiles] = useState([]);
@@ -52,22 +52,33 @@ export default function HomePage()
         }
     }
 
-    async function downloadFile(filename) {
-        try {
-            const response = await fetch(`http://46.63.69.24:3000/api/download/${filename}`);
-            const blob = await response.blob();
+    async function downloadFile(file) {
+        const myHeaders = new Headers();
+        myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+        const requestOptions = {
+            method: 'GET',
+            headers: myHeaders,
+        };
+        const response = await fetch(`http://46.63.69.24:3000/api/files/${file.id}/download`, requestOptions);
+        const fileChunks = await response.json();
+        const chunks = [];
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        } catch (error) {
-            console.error('Error:', error);
+        for(const chunk of fileChunks) {
+            const response = await fetch(`http://46.63.69.24:3000/api/files/${file.id}/chunks/${chunk.index}/download`, requestOptions)
+            if(!response.ok){
+                const top = await response.json();
+                throw new Error(top.error)
+            }
+            const blob = await response.blob();
+            chunks.push(blob);
+
         }
+
+        const fileBlob = new Blob(chunks, {type: mime.getType(file.name)});
+        const downloadUrl = document.createElement("a");
+        downloadUrl.href = window.URL.createObjectURL(fileBlob);
+        downloadUrl.download = file.name;
+        downloadUrl.click();
     }
 
     const navigate = useNavigate();
@@ -91,52 +102,79 @@ export default function HomePage()
 
     useEffect(() => {
         fetchFiles();
-        handleSearch({ target: { value: '' } });
     }, []);
+
+    useEffect(() => {
+        handleSearch()
+    }, [searchTerm, fileList]);
 
 
     async function fetchFiles() {
-        try {
-            const myHeaders = new Headers();
-            myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
-            const requestOptions = {
-                method: 'GET',
-                headers: myHeaders,
-                };
-            const response = await fetch('http://46.63.69.24:3000/api/user/files', requestOptions);
-            const data = await response.json();
-            const files = data.files;
-            const filesNames = await Promise.all(files.map(async (file) => {
-                const responseInfo = await fetch(`http://46.63.69.24:3000/api/user/getfileinfo/${file.id}`, requestOptions);
-                const fileInfoData = await responseInfo.json();
-                const fileName = fileInfoData.name;
-                return {...file, name: fileName};
-            }));
-            setFileList(filesNames);
-        } catch (error) {
-            console.error('Error:', error);
-        }
+        const myHeaders = new Headers();
+        myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+        const requestOptions = {
+            method: 'GET',
+            headers: myHeaders,
+            };
+        const response = await fetch('http://46.63.69.24:3000/api/user/files', requestOptions);
+        const files = await response.json();
+        setFileList(files);
     }
 
 
     const handleFileSelect = async (event) => {
         const file = event.target.files[0];
-        setSelectedFile(file);
         setIsLoading(true)
         await uploadFile(file);
         setIsLoading(false)
         setUploadedFiles([...uploadedFiles, file]);
     };
-    const filesList = [];
 
-    const handleSearch = (event) => {
-        const searchTerm = event.target.value;
-        setSearchTerm(searchTerm);
-        const filtered = filesList.filter(file => file.name.toLowerCase().includes(searchTerm.toLowerCase()));
-        setFilteredFiles(filtered);
+    const handleFileDownload = async (file) => {
+        setIsDownloading(prevState => ({...prevState, [file.id]:true}))
+        await downloadFile(file);
+        setIsDownloading(prevState => ({...prevState, [file.id]:false}))
     };
 
+    const handleSearch = () => {
+        const filtered = fileList.filter(file => file.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        setFilteredFiles(filtered);
+    };
+    const [contextMenuVisible, setContextMenuVisible] = useState(false);
+    const [contextMenuPosition, setContextMenuPosition] = useState({ top: 0, left: 0 });
+    const [selectedFile, setSelectedFile] = useState(null);
+
+    const handleContextMenu = (event, file) => {
+        event.preventDefault();
+        setSelectedFile(file);
+        setContextMenuVisible(true);
+        setContextMenuPosition({ top: event.clientY, left: event.clientX });
+    };
+
+
+    async function handleDelete(file) {
+        const myHeaders = new Headers();
+        myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+        const requestOptions = {
+            method: 'DELETE',
+            headers: myHeaders,
+        };
+        const response = await fetch(`http://46.63.69.24:3000/api/files/${file.id}`, requestOptions);
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error)
+        }
+        setContextMenuVisible(false);
+        fetchFiles();
+    }
+
+
     return <>
+        <div id={'contextMenu'} className={'context-menu'} style={{display: 'none'}}>
+            <ul>
+                <li><a href={'#'} id={'DeleteFile'}>Delete</a></li>
+            </ul>
+        </div>
         <div className={'flex-column d-flex justify-content-center align-items-center'}
              style={{background: '#1f2d39', height: '100vh', width: '100%'}}>
             <h1 className={'text-center mb-3 text-white'} style={{color: '#e0e0e0'}}>Home</h1>
@@ -164,61 +202,154 @@ export default function HomePage()
                         <input type="file" style={{display: 'none'}} onChange={handleFileSelect} disabled={isLoading}/>
                     </label>
                 </div>
-                <div className="file-list-container mx-auto" style={{
+                <div className="mx-auto" style={{
                     background: '#C0C0C0',
                     width: '90%',
                     height: '65vh',
                     maxHeight: '80%',
                     borderRadius: '5px',
-                    overflowY: 'auto'
+                    overflow: 'hidden',
                 }}>
-                    <ul className="file-list" style={{listStyle: 'none', padding: 0}}>
-                        <li style={{
-                            marginBottom: '5px',
-                            padding: '5px',
-                            fontSize: '1.1rem',
-                            lineHeight: '3vh',
-                            borderRadius: '5px 5px 0 0',
-                            textAlign: 'center',
-                            fontWeight: 'bold',
-                            background: '#f0f0f0',
-                        }}>Storage
-                        </li>
-                        <li>
-                            <input
-                                type="text"
-                                placeholder="Search..."
-                                value={searchTerm}
-                                onChange={(event) => handleSearch(event)}
-                                style={{
-                                    margin: '1% 2% 1% 2.5%',
-                                    padding: '6px',
-                                    width: '95%',
-                                    borderRadius: '3px',
-                                    border: '1px solid #ccc',
-                                    textAlign: 'center',
-                                }}
-                            />
-                        </li>
-                        {filteredFiles.map((file, index) => (
-                            <li key={index} style={{
-                                marginBottom: '4px',
-                                marginLeft: '20px',
-                                marginRight: '20px',
-                                padding: '5px',
+                    <div style={{
+                        marginBottom: '5px',
+                        padding: '5px',
+                        fontSize: '1.1rem',
+                        lineHeight: '3vh',
+                        borderRadius: '5px 5px 0 0',
+                        textAlign: 'center',
+                        fontWeight: 'bold',
+                        background: '#f0f0f0',
+                    }}>Storage
+                    </div>
+                    <div style={{
+                        textAlign: 'center',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '0.5vh'
+                    }}>
+                        <input
+                            type="text"
+                            placeholder="Search..."
+                            value={searchTerm}
+                            onChange={(event) => {
+                                setSearchTerm(event.target.value)
+                            }}
+                            style={{
+                                margin: '1% 2% 1% 2.5%',
+                                padding: '6px',
+                                width: '90%',
                                 borderRadius: '3px',
+                                border: '1px solid #ccc',
                                 textAlign: 'center',
-                                background: selectedFiles.includes(file.name) ? '#cceeff' : 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
+                            }}
+                        />
+                        <button style={{
+                            cursor: 'pointer',
+                            background: 'none',
+                            border: 'none',
+                            marginRight: '2.5%',
+                        }}
+                        onClick={fetchFiles}>
+                            <FontAwesomeIcon icon={faRefresh}/>
+                        </button>
+                    </div>
+                    <div className="file-list-container mx-auto" style={{
+                        overflowY: 'auto',
+                        width: '100%',
+                        height: 'calc(100% - 20%)',
+                        borderRadius: '5px',
+                    }}>
+                        <ul className={'file-list'} style={{listStyle: 'none', padding: '0'}}>
+                            {filteredFiles.map((file, index) => {
+                                const fileSizeKB = (file.size / 1024).toFixed(2);
+                                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                                const fileSizeGB = (file.size / (1024 * 1024 * 1024)).toFixed(2);
+                                let fileSize = '';
+                                if (fileSizeGB > 1) {
+                                    fileSize = `${fileSizeGB} GB`;
+                                } else if (fileSizeMB > 1) {
+                                    fileSize = `${fileSizeMB} MB`;
+                                } else {
+                                    fileSize = `${fileSizeKB} KB`;
+                                }
+                                const fileName = file.name.length > 40 ? file.name.slice(0,40) + "..." : file.name;
+                                return (
+                                    <li key={index} onContextMenu={(e) => handleContextMenu(e, file)}
+                                        style={{
+                                        marginBottom: '4px',
+                                        marginLeft: '20px',
+                                        marginRight: '20px',
+                                        padding: '5px',
+                                        borderRadius: '3px',
+                                        textAlign: 'center',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                    }}>
+                                        <strong style={{width: '93%', textAlign: 'left'}}>{fileName}</strong>
+                                        <div style={{width: '31%', display: 'flex', justifyContent: 'space-between'}}>
+                                            <span style={{marginRight: '5%'}}>{fileSize}</span>
+                                            <FontAwesomeIcon icon={isDownloading[file.id] ? faSpinner : faDownload}
+                                                 style={{
+                                                    marginLeft: 'auto',
+                                                    cursor: 'pointer',
+                                                    marginTop: '4%'
+                                                 }}
+                                                 onClick={() => handleFileDownload(file)}
+                                            />
+                                        </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                        {contextMenuVisible && (
+                            <div id="contextMenu"  className={'context-menu'} style={{
+                                width: '170px',
+                                height: '80px',
+                                position: 'fixed',
+                                top: contextMenuPosition.top,
+                                left: contextMenuPosition.left,
+                                background: 'white',
+                                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
                             }}>
-                                <strong>{file.name}</strong>
-                                <FontAwesomeIcon icon={faDownload} style={{marginLeft:'auto'}} onClick={() => downloadFile(file.name)} />
-                            </li>
-                        ))}
-                    </ul>
+                                <div className={'context-menu-header'}
+                                     style={{
+                                         background: 'slategrey',
+                                         padding: '1.5px',
+                                         display: 'flex',
+                                         justifyContent: 'space-between',
+                                     }}>
+                                    <strong style={{marginLeft: '10px', marginTop: '1px', fontSize: '0.9rem'}}>
+                                        {selectedFile.name.length > 14 ? `${selectedFile.name.substring(0, 14)}..` : selectedFile.name}
+                                    </strong>
+                                    <FontAwesomeIcon icon={faWindowClose}
+                                                      style={{
+                                                          cursor: 'pointer',
+                                                          margin: '3% 5% 3% auto',
+                                                      }}
+                                                      onClick={() => {setContextMenuVisible(false)}}
+                                    />
+                                </div>
+                                <div className={'context-menu-content'} style={{borderBottom: '1px solid #ccc'}}></div>
+                                <div>
+                                    <strong style={{flex: '1'}}><a href={'#'} onClick={() => handleDelete(selectedFile)}
+                                       style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        height: '100%',
+                                        textDecoration: 'none',
+                                        color: 'black',
+                                        padding: '10.5px',
+                                        fontSize: '1.2rem',
+                                    }}
+                                   onMouseOver={(e) => e.target.style.backgroundColor = 'lightgray'}
+                                   onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+                                    >Delete</a></strong>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </form>
         </div>
