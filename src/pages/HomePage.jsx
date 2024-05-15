@@ -50,6 +50,7 @@ export default function HomePage()
                     .catch(error => console.error('chunk: ', error));
             }
         }
+        fetchFiles()
     }
 
     async function downloadFile(file) {
@@ -118,7 +119,12 @@ export default function HomePage()
             };
         const response = await fetch('http://46.63.69.24:3000/api/user/files', requestOptions);
         const files = await response.json();
-        setFileList(files);
+        if(files){
+            setFileList(files);
+        }
+        else {
+            setFileList([])
+        }
     }
 
 
