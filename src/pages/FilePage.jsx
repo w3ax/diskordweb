@@ -34,7 +34,7 @@ export default function FilePage() {
             <>
                 <div className={'flex-column d-flex justify-content-center align-items-center'}
                      style={{background: '#1f2d39', height: '100vh', width: '100%'}}>
-                    <h1 className={'text-center mb-3 text-white'} style={{color: '#e0e0e0'}}>Download the file</h1>
+                    <h2 className={'text-center mb-3 text-white'} style={{color: '#e0e0e0'}}>File</h2>
                     <Card className={'rounded-4 p-4'}>
                         <div  className="mb-4 d-flex text-center justify-content-between align-items-center">
                             <strong className={''}>{file.name}</strong>
