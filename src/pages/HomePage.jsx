@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faDownload, faRefresh, faSpinner, faWindowClose } from '@fortawesome/free-solid-svg-icons';
-import mime from 'mime';
+import Download from '../Functions/Download.jsx'
 
 export default function HomePage()
 {
@@ -53,35 +53,6 @@ export default function HomePage()
         fetchFiles()
     }
 
-    async function downloadFile(file) {
-        const myHeaders = new Headers();
-        myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
-        const requestOptions = {
-            method: 'GET',
-            headers: myHeaders,
-        };
-        const response = await fetch(`http://46.63.69.24:3000/api/files/${file.id}/download`, requestOptions);
-        const fileChunks = await response.json();
-        const chunks = [];
-
-        for(const chunk of fileChunks) {
-            const response = await fetch(`http://46.63.69.24:3000/api/files/${file.id}/chunks/${chunk.index}/download`, requestOptions)
-            if(!response.ok){
-                const top = await response.json();
-                throw new Error(top.error)
-            }
-            const blob = await response.blob();
-            chunks.push(blob);
-
-        }
-
-        const fileBlob = new Blob(chunks, {type: mime.getType(file.name)});
-        const downloadUrl = document.createElement("a");
-        downloadUrl.href = window.URL.createObjectURL(fileBlob);
-        downloadUrl.download = file.name;
-        downloadUrl.click();
-    }
-
     const navigate = useNavigate();
     useEffect(() => {
         const myHeaders = new Headers();
@@ -125,6 +96,7 @@ export default function HomePage()
         else {
             setFileList([])
         }
+        console.log(files)
     }
 
 
@@ -138,7 +110,7 @@ export default function HomePage()
 
     const handleFileDownload = async (file) => {
         setIsDownloading(prevState => ({...prevState, [file.id]:true}))
-        await downloadFile(file);
+        await Download(file);
         setIsDownloading(prevState => ({...prevState, [file.id]:false}))
     };
 
@@ -172,6 +144,43 @@ export default function HomePage()
         }
         setContextMenuVisible(false);
         fetchFiles();
+    }
+
+    async function setFilePrivacy(file, isPublic) {
+        if(isPublic===file.isPublic)
+            return;
+        const myHeaders = new Headers();
+        myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+        myHeaders.append("Content-Type", "application/json");
+        const requestOptions = {
+            method: 'PATCH',
+            headers: myHeaders,
+            body: JSON.stringify({isPublic: true})
+        };
+        const response = await fetch(`http://46.63.69.24:3000/api/files/${file.id}/privacy`, requestOptions)
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error)
+        }
+        const newFileList = fileList.map((fileCringe) => {
+            if (fileCringe.id === file.id){
+                fileCringe.isPublic = isPublic;
+                return fileCringe;
+            }
+            else{
+                return fileCringe;
+            }
+        })
+        setFileList(newFileList);
+    }
+
+    async function handleShareLink(file) {
+        await setFilePrivacy(file, true);
+        const downloadPageLink = `${window.location.origin}/files/${file.id}`;
+
+        navigator.clipboard.writeText(downloadPageLink)
+            .catch((error) => console.error(error));
+        setContextMenuVisible(false);
     }
 
 
@@ -310,9 +319,9 @@ export default function HomePage()
                             })}
                         </ul>
                         {contextMenuVisible && (
-                            <div id="contextMenu"  className={'context-menu'} style={{
+                            <div id="contextMenu" className={'context-menu'} style={{
                                 width: '170px',
-                                height: '80px',
+                                height: 'auto',
                                 position: 'fixed',
                                 top: contextMenuPosition.top,
                                 left: contextMenuPosition.left,
@@ -330,29 +339,64 @@ export default function HomePage()
                                         {selectedFile.name.length > 14 ? `${selectedFile.name.substring(0, 14)}..` : selectedFile.name}
                                     </strong>
                                     <FontAwesomeIcon icon={faWindowClose}
-                                                      style={{
-                                                          cursor: 'pointer',
-                                                          margin: '3% 5% 3% auto',
-                                                      }}
-                                                      onClick={() => {setContextMenuVisible(false)}}
+                                                     style={{
+                                                         cursor: 'pointer',
+                                                         margin: '3% 5% 3% auto',
+                                                     }}
+                                                     onClick={() => {
+                                                         setContextMenuVisible(false)
+                                                     }}
                                     />
                                 </div>
                                 <div className={'context-menu-content'} style={{borderBottom: '1px solid #ccc'}}></div>
                                 <div>
                                     <strong style={{flex: '1'}}><a href={'#'} onClick={() => handleDelete(selectedFile)}
-                                       style={{
-                                        display: 'block',
-                                        width: '100%',
-                                        height: '100%',
-                                        textDecoration: 'none',
-                                        color: 'black',
-                                        padding: '10.5px',
-                                        fontSize: '1.2rem',
-                                    }}
-                                   onMouseOver={(e) => e.target.style.backgroundColor = 'lightgray'}
-                                   onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+                                                                   style={{
+                                                                       display: 'block',
+                                                                       width: '100%',
+                                                                       height: '100%',
+                                                                       textDecoration: 'none',
+                                                                       color: 'black',
+                                                                       padding: '10.5px',
+                                                                       fontSize: '1.2rem',
+                                                                   }}
+                                                                   onMouseOver={(e) => e.target.style.backgroundColor = 'lightgray'}
+                                                                   onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
                                     >Delete</a></strong>
                                 </div>
+                                <div>
+                                    <strong style={{flex: '1'}}><a href={'#'} onClick={() => handleShareLink(selectedFile)}
+                                                                   style={{
+                                                                       display: 'block',
+                                                                       width: '100%',
+                                                                       height: '100%',
+                                                                       textDecoration: 'none',
+                                                                       color: 'black',
+                                                                       padding: '10.5px',
+                                                                       fontSize: '1.2rem',
+                                                                   }}
+                                                                   onMouseOver={(e) => e.target.style.backgroundColor = 'lightgray'}
+                                                                   onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+                                    >Share</a></strong>
+                                </div>
+                                {selectedFile.isPublic && (
+                                    <div>
+                                        <strong style={{flex: '1'}}><a href={'#'}
+                                                                       onClick={() => handleShareLink(selectedFile)}
+                                                                       style={{
+                                                                           display: 'block',
+                                                                           width: '100%',
+                                                                           height: '100%',
+                                                                           textDecoration: 'none',
+                                                                           color: 'black',
+                                                                           padding: '10.5px',
+                                                                           fontSize: '1.2rem',
+                                                                       }}
+                                                                       onMouseOver={(e) => e.target.style.backgroundColor = 'lightgray'}
+                                                                       onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+                                        >Set as private</a></strong>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
