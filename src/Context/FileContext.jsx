@@ -26,6 +26,7 @@ export default function FileProvider({ children })  {
                 const data = response.json();
                 if (!response.ok) {
                     console.error(data.error)
+                    return null;
                 }
                 return data;
             })

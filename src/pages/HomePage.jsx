@@ -155,7 +155,7 @@ export default function HomePage()
         const requestOptions = {
             method: 'PATCH',
             headers: myHeaders,
-            body: JSON.stringify({isPublic: true})
+            body: JSON.stringify({isPublic})
         };
         const response = await fetch(`http://46.63.69.24:3000/api/files/${file.id}/privacy`, requestOptions)
         if (!response.ok) {
@@ -180,6 +180,11 @@ export default function HomePage()
 
         navigator.clipboard.writeText(downloadPageLink)
             .catch((error) => console.error(error));
+        setContextMenuVisible(false);
+    }
+
+    async function handleMakePrivate(file) {
+        await setFilePrivacy(file, false);
         setContextMenuVisible(false);
     }
 
@@ -382,7 +387,7 @@ export default function HomePage()
                                 {selectedFile.isPublic && (
                                     <div>
                                         <strong style={{flex: '1'}}><a href={'#'}
-                                                                       onClick={() => handleShareLink(selectedFile)}
+                                                                       onClick={() =>handleMakePrivate(selectedFile)}
                                                                        style={{
                                                                            display: 'block',
                                                                            width: '100%',
