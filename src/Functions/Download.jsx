@@ -27,4 +27,5 @@ export default async function Download(file){
     downloadUrl.href = window.URL.createObjectURL(fileBlob);
     downloadUrl.download = file.name;
     downloadUrl.click();
+
 }

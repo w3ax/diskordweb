@@ -12,12 +12,18 @@ export default function HomePage()
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredFiles, setFilteredFiles] = useState(fileList);
     const [uploadedFiles, setUploadedFiles] = useState([]);
+    const [notification, setNotification] = useState(null);
+    const [isNotificationVisible, setIsNotificationVisible] = useState(false);
+    const [notificationTimer, setNotificationTimer] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
 
     async function uploadFile(file){
+        setUploadProgress(0);
         const chunkSize = 20 * 1024 * 1024;
         const fileSize = file.size;
         const fileName = file.name;
         const numChunks = Math.ceil(fileSize / chunkSize);
+        const progressPerChunk = 400 / numChunks;
         const chunks = [];
         for (let i = 0; i < numChunks; i++) {
             const start = i * chunkSize;
@@ -44,13 +50,14 @@ export default function HomePage()
         const fileId = await getFileId(file.name, file.size, fileHash, false, numChunks, chunkSize)
             .catch(error => console.error('fileId: ', error));
 
-        for (const chunk of chunks) {
-            {
-                await uploadChunk(fileId, chunk)
-                    .catch(error => console.error('chunk: ', error));
-            }
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            await uploadChunk(fileId, chunk)
+                .catch(error => console.error('chunk: ', error));
+            smoothProgressUpdate(((i + 1) / numChunks) * progressPerChunk);
         }
         fetchFiles()
+        showNotification(`The file "${file.name}" has been uploaded.`);
     }
 
     const navigate = useNavigate();
@@ -112,6 +119,7 @@ export default function HomePage()
         setIsDownloading(prevState => ({...prevState, [file.id]:true}))
         await Download(file);
         setIsDownloading(prevState => ({...prevState, [file.id]:false}))
+        showNotification(`The file "${file.name}" has been downloaded.`);
     };
 
     const handleSearch = () => {
@@ -144,6 +152,7 @@ export default function HomePage()
         }
         setContextMenuVisible(false);
         fetchFiles();
+        showNotification(`The file "${file.name}" has been deleted.`);
     }
 
     async function setFilePrivacy(file, isPublic) {
@@ -172,6 +181,7 @@ export default function HomePage()
             }
         })
         setFileList(newFileList);
+        showNotification(`The file "${file.name}" link has been copied.`);
     }
 
     async function handleShareLink(file) {
@@ -187,6 +197,41 @@ export default function HomePage()
         await setFilePrivacy(file, false);
         setContextMenuVisible(false);
     }
+
+    const showNotification = (message) => {
+        setNotification(message);
+        setIsNotificationVisible(true);
+        if (notificationTimer) {
+            clearTimeout(notificationTimer);
+        }
+        const timer = setTimeout(() => {
+            setIsNotificationVisible(false);
+        }, 5000);
+        setNotificationTimer(timer);
+    };
+
+    async function smoothProgressUpdate(targetProgress) {
+        return new Promise((resolve) => {
+            const stepTime = 5;
+            const steps = 50;
+            const currentProgress = uploadProgress;
+            const stepSize = (targetProgress - currentProgress) / steps;
+            let progress = currentProgress;
+            let stepCount = 0;
+
+            const interval = setInterval(() => {
+                progress += stepSize;
+                stepCount += 1;
+                if (stepCount >= steps || progress >= targetProgress) {
+                    progress = targetProgress;
+                    clearInterval(interval);
+                    resolve();
+                }
+                setUploadProgress(Math.round(progress));
+            }, stepTime);
+        });
+    }
+
 
 
     return <>
@@ -370,7 +415,8 @@ export default function HomePage()
                                     >Delete</a></strong>
                                 </div>
                                 <div>
-                                    <strong style={{flex: '1'}}><a href={'#'} onClick={() => handleShareLink(selectedFile)}
+                                    <strong style={{flex: '1'}}><a href={'#'}
+                                                                   onClick={() => handleShareLink(selectedFile)}
                                                                    style={{
                                                                        display: 'block',
                                                                        width: '100%',
@@ -406,6 +452,27 @@ export default function HomePage()
                         )}
                     </div>
                 </div>
+                {isNotificationVisible && (
+                    <div className="notification" style={{
+                        position: 'fixed',
+                        top: '10px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        backgroundColor: '#28a745',
+                        color: '#fff',
+                        padding: '10px 20px',
+                        borderRadius: '5px',
+                        zIndex: 1000,
+                        textAlign: 'center',
+                    }}>
+                        {notification}
+                    </div>
+                )}
+                {isLoading && (
+                    <div className="upload-progress" style={{ width: '100%', textAlign: 'center', color: '#fff' }}>
+                        Uploaded: {uploadProgress}%
+                    </div>
+                )}
             </form>
         </div>
     </>;
