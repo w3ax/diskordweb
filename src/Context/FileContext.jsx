@@ -21,7 +21,7 @@ export default function FileProvider({ children })  {
             method: 'GET',
             headers: myHeaders,
         };
-        fetch(`http://46.63.69.24:3000/api/files/${id}`, requestOptions)
+        fetch(import.meta.env.VITE_API_SERVER+`files/${id}`, requestOptions)
             .then(response => {
                 const data = response.json();
                 if (!response.ok) {
