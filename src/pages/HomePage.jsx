@@ -1,10 +1,9 @@
-import {useEffect, useState, useRef} from "react";
+import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faDownload, faRefresh, faSpinner, faWindowClose } from '@fortawesome/free-solid-svg-icons';
-import Download from '../Functions/Download.jsx'
 import useNotification from '../Functions/Notification';
-import {smoothProgressUpdate} from "../Functions/Progress.jsx";
+import mime from "mime";
 
 export default function HomePage()
 {
@@ -14,20 +13,22 @@ export default function HomePage()
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredFiles, setFilteredFiles] = useState(fileList);
     const [uploadedFiles, setUploadedFiles] = useState([]);
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const progressRef = useRef(uploadProgress);
+    const [uploadProgress, setUploadProgress] = useState("");
+    const [downloadProgress, setDownloadProgress] = useState("");
     const [email, setEmail] = useState('');
     const { Notification, showNotification } = useNotification();
-    progressRef.current = uploadProgress;
+    const updateChunkProgress = (currentChunk, totalChunks, setUploadProgress) => {
+        setUploadProgress(`${currentChunk}/${totalChunks} chunks`);
+    }
+
 
     async function uploadFile(file){
-        setUploadProgress(0);
         const chunkSize = 20 * 1024 * 1024;
         const fileSize = file.size;
         const fileName = file.name;
         const numChunks = Math.ceil(fileSize / chunkSize);
-        const progressPerChunk = 100 / numChunks;
         const chunks = [];
+        setUploadProgress(`${0}/${numChunks} chunks`);
 
         for (let i = 0; i < numChunks; i++) {
             const start = i * chunkSize;
@@ -55,23 +56,14 @@ export default function HomePage()
             .catch(error => console.error('fileId: ', error));
 
         for (let i = 0; i < chunks.length; i++) {
-            const isLastChunk = i === chunks.length - 1;
             const chunk = chunks[i];
-
-            let duration = 6000;
-            if (isLastChunk) {
-                const lastChunkRatio = chunk.size / chunkSize;
-                duration = duration * lastChunkRatio;
-            }
-
-            smoothProgressUpdate(progressRef.current, (i + 1) * progressPerChunk, duration, setUploadProgress);
 
             await uploadChunk(fileId, chunk).catch(error => {
                 console.error('chunk: ', error);
-                smoothProgressUpdate(progressRef.current, (i + 1) * progressPerChunk, duration * 2, setUploadProgress);
             });
+            updateChunkProgress( i + 1, numChunks, setUploadProgress);
         }
-        smoothProgressUpdate(progressRef.current, 100, 6000, setUploadProgress);
+        setUploadProgress(`${numChunks}/${numChunks} chunks`);
         fetchFiles()
         showNotification(`The file "${file.name}" has been uploaded.`);
     }
@@ -132,6 +124,41 @@ export default function HomePage()
     }
 
 
+    async function Download(file){
+        const myHeaders = new Headers();
+        myHeaders.append("Authorization", "Bearer " + localStorage.getItem("token"));
+        const requestOptions = {
+            method: 'GET',
+            headers: myHeaders,
+        };
+        const response = await fetch(import.meta.env.VITE_API_SERVER+`files/${file.id}/download`, requestOptions);
+        const fileChunks = await response.json();
+        const numChunks = fileChunks.length;
+        setDownloadProgress(`${0}/${numChunks} chunks`);
+        const chunks = [];
+
+        for(let i = 0; i < numChunks; i++) {
+            const chunk = fileChunks[i];
+            const response = await fetch(import.meta.env.VITE_API_SERVER+`files/${file.id}/chunks/${chunk.index}/download`, requestOptions)
+            if(!response.ok){
+                const top = await response.json();
+                throw new Error(top.error)
+            }
+            const blob = await response.blob();
+            chunks.push(blob);
+
+            updateChunkProgress( i + 1, numChunks, setDownloadProgress)
+        }
+
+        const fileBlob = new Blob(chunks, {type: mime.getType(file.name)});
+        const downloadUrl = document.createElement("a");
+        downloadUrl.href = window.URL.createObjectURL(fileBlob);
+        downloadUrl.download = file.name;
+        downloadUrl.click();
+        setDownloadProgress('')
+        fetchFiles();
+    }
+
     const handleFileSelect = async (event) => {
         const file = event.target.files[0];
         setIsLoading(true)
@@ -141,9 +168,9 @@ export default function HomePage()
     };
 
     const handleFileDownload = async (file) => {
-        setIsDownloading(prevState => ({...prevState, [file.id]:true}))
+        setIsDownloading(true)
         await Download(file);
-        setIsDownloading(prevState => ({...prevState, [file.id]:false}))
+        setIsDownloading(false)
         showNotification(`The file "${file.name}" has been downloaded.`);
     };
 
@@ -471,7 +498,13 @@ export default function HomePage()
                     {isLoading && (
                         <div className="upload-progress"
                              style={{width: '100%', textAlign: 'center', color: '#fff', marginTop: '2%'}}>
-                            Uploaded: {uploadProgress.toFixed(0)}%
+                            Uploaded: {uploadProgress}
+                        </div>
+                    )}
+                    {isDownloading && (
+                        <div className="download-progress"
+                             style={{width: '100%', textAlign: 'center', color: '#fff', marginTop: '2%'}}>
+                            Downloaded: {downloadProgress}
                         </div>
                     )}
                 </form>
